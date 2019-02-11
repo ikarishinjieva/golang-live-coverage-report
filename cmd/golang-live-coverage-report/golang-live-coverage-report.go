@@ -14,8 +14,8 @@ import (
 	"text/template"
 )
 
-var flagPackgeName = flag.String("bootstrap-package-name", "test", "package name of generated bootstrap golang code")
-var flagBootstrapOutputFile = flag.String("bootstrap-outfile", "test.go", "target file path of generated bootstrap golang code")
+var flagPackgeName = flag.String("bootstrap-package-name", "", "package name of generated bootstrap golang code")
+var flagBootstrapOutputFile = flag.String("bootstrap-outfile", "", "target file path of generated bootstrap golang code")
 var flagPreCompile = flag.Bool("pre-build", false, "mode: before build, it will preserve raw code, and generate cover code")
 var flagPostCompile = flag.Bool("post-build", false, "mode: after build, it will rollback replaced code, and clean the generated cover code")
 var flagPreCompileRawCodeOutputDirectory = flag.String("raw-code-build-dir", "", "before compilation, raw codes will be moved to this directory. Then you can deploy the raw source code from here in compilation")
@@ -72,7 +72,7 @@ func main() {
 		err = runGoCoverCommands(files)
 		exitIfErr(err)
 
-		golangCode, err := makeBootstrapGolangCode(*flagPackgeName, *flagRawCodeDeployDirectory, files)
+		golangCode, err := makeBootstrapGolangCode(*flagPackgeName, *flagRawCodeDeployDirectory, *flagBootstrapOutputFile, files)
 		exitIfErr(err)
 
 		err = ioutil.WriteFile(*flagBootstrapOutputFile, []byte(golangCode), 0666)
@@ -116,7 +116,7 @@ func checkRawCode(files tFiles) error {
 			return err
 		}
 		if strings.HasPrefix(string(bs), "//line ") {
-			return fmt.Errorf("check source code error: %v is already replaced with 'go tool cover', run -post-compile first")
+			return fmt.Errorf("check source code error: %v is already replaced with 'go tool cover', run -post-compile first", path)
 		}
 	}
 	return nil
@@ -151,11 +151,14 @@ func preserveRawCode(files tFiles, outDir string) error {
 }
 
 type tFile struct {
-	RelPath    string
-	ImportPath string
-	GoCoverCmd *exec.Cmd
-	VarName    string
 	RootPath   string
+	RelPath    string
+
+	ImportPath string
+	ImportVar  string
+
+	GoCoverCmd *exec.Cmd
+	VarName    string //variable name in `go tool cover` generated code, like 'GoCover_??'
 }
 
 type tFiles []*tFile
@@ -172,12 +175,44 @@ func newFile(absPath, rootPath, importPath string) (*tFile, error) {
 	}, nil
 }
 
-func makeBootstrapGolangCode(packageName string, rawCodeDeployDir string, files tFiles) (string, error) {
+func makeBootstrapGolangCode(packageName, rawCodeDeployDir, bootstrapOutFile string, files tFiles) (string, error) {
+	bootstrapImportPath, err := getBootstrapImportPath(bootstrapOutFile)
+	if nil != err {
+		return "", err
+	}
+
+	if "" == packageName {
+		packageName = filepath.Base(bootstrapImportPath)
+	}
+
+	importLines := make([]string, 0)
+	{
+		imports := map[string]string{}
+		importSeq := 0
+
+		for _, file := range files {
+			importPath := file.ImportPath
+			if bootstrapImportPath == importPath {
+				continue
+			}
+			importVar, found := imports[importPath]
+			if !found {
+				importSeq ++
+				imports[importPath] = fmt.Sprintf("imp%v", importSeq)
+				importVar = imports[importPath]
+				importLines = append(importLines, fmt.Sprintf(`%v "%v"`, importVar, importPath))
+			}
+			file.ImportVar = importVar
+		}
+	}
+
 	buf := bytes.NewBufferString("")
-	err := bootstrapGolangCodeTpl.Execute(buf, tBootstrapGolangCodeTpl{
-		PackageName:      packageName,
-		Files:            files,
-		RawCodeDeployDir: rawCodeDeployDir,
+	err = bootstrapGolangCodeTpl.Execute(buf, tBootstrapGolangCodeTpl{
+		PackageName:       packageName,
+		Files:             files,
+		RawCodeDeployDir:  rawCodeDeployDir,
+		PackageImportPath: bootstrapImportPath,
+		ImportLines:       importLines,
 	})
 	if nil != err {
 		return "", err
@@ -185,10 +220,24 @@ func makeBootstrapGolangCode(packageName string, rawCodeDeployDir string, files 
 	return buf.String(), nil
 }
 
+func getBootstrapImportPath(bootstrapOutFile string) (string, error) {
+	bootstrapOutFileAbs, err := filepath.Abs(bootstrapOutFile)
+	if nil != err {
+		return "", err
+	}
+	goListJson, err := goList(filepath.Dir(bootstrapOutFileAbs))
+	if nil != err {
+		return "", err
+	}
+	return goListJson.ImportPath, nil
+}
+
 type tBootstrapGolangCodeTpl struct {
-	PackageName      string
-	Files            tFiles
-	RawCodeDeployDir string
+	PackageName       string
+	Files             tFiles
+	RawCodeDeployDir  string
+	PackageImportPath string
+	ImportLines       []string
 }
 
 var bootstrapGolangCodeTpl = template.Must(
@@ -202,14 +251,20 @@ var bootstrapGolangCodeTplText = `package {{.PackageName}}
 
 import (
 	report "github.com/ikarishinjieva/golang-live-coverage-report/pkg"
+	{{range $i, $f := .ImportLines}}
+	{{$f}}
+	{{end}}
 )
 
 func init() {
 	//generated
 	{{range $i, $f := .Files}}
 	report.RegisterCover(
-		"{{join $.RawCodeDeployDir $f.RelPath}}",
+		"{{join $.RawCodeDeployDir $f.RelPath}}", {{if eq "" $f.ImportVar}}
 		{{$f.VarName}}.Count[:], {{$f.VarName}}.Pos[:], {{$f.VarName}}.NumStmt[:])
+		{{else}}
+		{{$f.ImportVar}}.{{$f.VarName}}.Count[:], {{$f.ImportVar}}.{{$f.VarName}}.Pos[:], {{$f.ImportVar}}.{{$f.VarName}}.NumStmt[:])
+		{{end}}
 	{{end}}
 }
 
