@@ -74,7 +74,9 @@ func makeCoverProfile(covers tCovers, mode string) ([]*Profile, error) {
 			profile.Blocks[j] = b
 			j++
 		}
-		profile.Blocks = profile.Blocks[:j]
+		if j <= len(profile.Blocks) {
+			profile.Blocks = profile.Blocks[:j]
+		}
 
 		profiles = append(profiles, profile)
 	}
