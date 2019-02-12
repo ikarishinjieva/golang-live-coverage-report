@@ -1,7 +1,9 @@
 package pkg
 
 import (
+	"fmt"
 	"io"
+	"sort"
 	"sync"
 	"sync/atomic"
 )
@@ -29,12 +31,12 @@ func RegisterCover(fileName string, counter []uint32, pos []uint32, numStmts []u
 	})
 }
 
-func makeCoverProfile(covers tCovers) ([]*Profile, error) {
+func makeCoverProfile(covers tCovers, mode string) ([]*Profile, error) {
 	profiles := make([]*Profile, 0)
 	for _, cover := range covers {
 		profile := &Profile{
 			FileName: cover.fileName,
-			Mode:     "set",
+			Mode:     mode,
 			Blocks:   make([]ProfileBlock, 0),
 		}
 		for i := range cover.counter {
@@ -48,6 +50,32 @@ func makeCoverProfile(covers tCovers) ([]*Profile, error) {
 			}
 			profile.Blocks = append(profile.Blocks, block)
 		}
+
+		sort.Sort(blocksByStart(profile.Blocks))
+		// Merge samples from the same location.
+		j := 1
+		for i := 1; i < len(profile.Blocks); i++ {
+			b := profile.Blocks[i]
+			last := profile.Blocks[j-1]
+			if b.StartLine == last.StartLine &&
+				b.StartCol == last.StartCol &&
+				b.EndLine == last.EndLine &&
+				b.EndCol == last.EndCol {
+				if b.NumStmt != last.NumStmt {
+					return nil, fmt.Errorf("inconsistent NumStmt: changed from %d to %d", last.NumStmt, b.NumStmt)
+				}
+				if mode == "set" {
+					profile.Blocks[j-1].Count |= b.Count
+				} else {
+					profile.Blocks[j-1].Count += b.Count
+				}
+				continue
+			}
+			profile.Blocks[j] = b
+			j++
+		}
+		profile.Blocks = profile.Blocks[:j]
+
 		profiles = append(profiles, profile)
 	}
 	return profiles, nil
@@ -57,7 +85,7 @@ func GenerateHtmlReport(out io.Writer) error {
 	coversMu.Lock()
 	covers := covers_
 	coversMu.Unlock()
-	profiles, err := makeCoverProfile(covers)
+	profiles, err := makeCoverProfile(covers, "set")
 	if nil != err {
 		return err
 	}
