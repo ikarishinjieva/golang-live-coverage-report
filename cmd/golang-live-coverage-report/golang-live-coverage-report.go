@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,8 +25,7 @@ var flagGo = flag.String("go", "go", "specific go binary path")
 
 func exitIfErr(err error) {
 	if nil != err {
-		fmt.Printf("ERROR: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("ERROR: %v\n", err)
 	}
 }
 
@@ -78,7 +78,7 @@ func main() {
 		err = ioutil.WriteFile(*flagBootstrapOutputFile, []byte(golangCode), 0666)
 		exitIfErr(err)
 
-		fmt.Printf(`Now, you can build your project:
+		log.Printf(`Now, you can build your project:
 1. The target codes are replaced by adding monitors inside (see "go tool cover")
 2. A bootstrap go file is generated at %v, it will enable the coverage reports, remember build your project with it
 3. The raw codes are moved to %v, remember deploy it to %v in your building
