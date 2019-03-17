@@ -84,6 +84,10 @@ func makeCoverProfile(covers tCovers, mode string) ([]*Profile, error) {
 }
 
 func GenerateHtmlReport(out io.Writer) error {
+	return GenerateHtmlReport2(out, "")
+}
+
+func GenerateHtmlReport2(out io.Writer, coverageReportRawCodeDir string) error {
 	coversMu.Lock()
 	covers := covers_
 	coversMu.Unlock()
@@ -91,5 +95,5 @@ func GenerateHtmlReport(out io.Writer) error {
 	if nil != err {
 		return err
 	}
-	return htmlOutput(profiles, out)
+	return htmlOutput(profiles, out, coverageReportRawCodeDir)
 }

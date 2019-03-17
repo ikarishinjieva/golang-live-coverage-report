@@ -8,9 +8,10 @@ import (
 	"io"
 	"io/ioutil"
 	"math"
+	"path/filepath"
 )
 
-func htmlOutput(profiles []*Profile, out io.Writer) error {
+func htmlOutput(profiles []*Profile, out io.Writer, coverageReportRawCodeDir string) error {
 	var d templateData
 
 	for _, profile := range profiles {
@@ -18,7 +19,11 @@ func htmlOutput(profiles []*Profile, out io.Writer) error {
 		if profile.Mode == "set" {
 			d.Set = true
 		}
-		src, err := ioutil.ReadFile(fn)
+		fp := fn
+		if "" != coverageReportRawCodeDir {
+			fp = filepath.Join(coverageReportRawCodeDir, fp)
+		}
+		src, err := ioutil.ReadFile(fp)
 		if err != nil {
 			return fmt.Errorf("can't read %q: %v", fn, err)
 		}
