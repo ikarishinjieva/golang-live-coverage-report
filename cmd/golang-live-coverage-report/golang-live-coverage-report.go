@@ -296,10 +296,15 @@ func getFilesFromArgs() (tFiles, error) {
 	return ret, nil
 }
 
+type Module struct {
+	Dir string
+}
+
 type GoListJson struct {
 	ImportPath string
 	GoFiles    []string
 	Root       string
+	Module
 }
 
 const singleFileImportPath = "command-line-arguments"
@@ -347,6 +352,9 @@ func goList(file string) (*GoListJson, error) {
 	goListJson := GoListJson{}
 	if err := json.Unmarshal(out, &goListJson); nil != err {
 		return nil, fmt.Errorf("unmarshal go list error: %v", err)
+	}
+	if goListJson.Root == "" {
+		goListJson.Root = goListJson.Module.Dir
 	}
 	return &goListJson, nil
 }
