@@ -6,7 +6,7 @@ This tool makes it available for **integration test** of long-run project, e.g. 
 
 Most code is copied from golang `cmd/cover` and `testing` pakcage.
 
-**Support golang 1.11+**. 
+**Requires golang 1.11+**. 
 
 # Demo
 1. Run the following script
